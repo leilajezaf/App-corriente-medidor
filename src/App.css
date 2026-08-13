@@ -1,0 +1,12 @@
+
+/* Definición de Tokens Semánticos */
+@theme {
+  --color-brand-primary: #2563eb;
+  --color-brand-secondary: #0f172a;
+  --color-surface-base: #f8fafc;
+  --color-text-main: #1e293b;
+  --color-text-muted: #64748b;
+  
+  --font-display: "Inter", sans-serif;
+  --radius-custom: 0.75rem;
+}
