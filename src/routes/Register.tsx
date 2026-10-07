@@ -1,103 +1,152 @@
 import { useState } from "react";
-import { UserPlus, Mail, Lock, User, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
+import { UserPlus, Mail, Lock, User, ShieldCheck, CheckCircle2, AlertCircle } from "lucide-react";
+import { supabase } from "../integrations/supabase/client";
 
 export default function Register() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     role: "operator",
   });
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 4000);
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      // Registro directo con Supabase Auth guardando rol y nombre en user_metadata
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            role: formData.role,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        setSubmitted(true);
+        setTimeout(() => {
+          navigate("/"); // Redirige al inicio tras registrarse
+        }, 1500);
+      }
+    } catch (err: any) {
+      console.error("Error al registrar:", err);
+      setErrorMsg(err.message || "Ocurrió un error al registrar la cuenta.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="max-w-md mx-auto my-8 space-y-6">
-      <div className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-xl">
-        <div className="text-center mb-6">
-          <div className="inline-flex p-3 bg-amber-500/10 rounded-2xl border border-amber-500/20 mb-3">
-            <UserPlus className="size-8 text-amber-400" />
+    <div className="min-h-screen bg-[#F6F8FA] flex items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-md bg-white border border-slate-100 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        
+        {/* Cabecera */}
+        <div className="text-center">
+          <div className="inline-flex p-3 bg-[#42C2C1]/10 rounded-2xl border border-[#42C2C1]/20 mb-3 text-[#42C2C1]">
+            <UserPlus className="size-8" />
           </div>
-          <h1 className="text-xl font-bold text-slate-100">Registro de Usuario</h1>
+          <h1 className="text-xl font-bold text-slate-800">Alta de Usuario</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Alta de operadores y administradores para el panel de medición
+            Registro para el panel de medición y simulación energética
           </p>
         </div>
 
+        {/* Notificación de Éxito */}
         {submitted && (
-          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2">
-            <CheckCircle2 className="size-4 shrink-0" />
-            <span>¡Usuario registrado con éxito!</span>
+          <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+            <span>¡Usuario registrado con éxito! Redirigiendo...</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Notificación de Error */}
+        {errorMsg && (
+          <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0 text-rose-500" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {/* Nombre Completo */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-600 mb-1">
               Nombre Completo
             </label>
             <div className="relative">
-              <User className="size-4 text-slate-500 absolute left-3.5 top-3" />
+              <User className="size-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 required
                 placeholder="Ej. Leila Fernández"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-400 focus:outline-none transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-slate-800 placeholder:text-slate-400 focus:border-[#42C2C1] focus:outline-none transition-colors"
               />
             </div>
           </div>
 
+          {/* Correo Electrónico */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-600 mb-1">
               Correo Electrónico
             </label>
             <div className="relative">
-              <Mail className="size-4 text-slate-500 absolute left-3.5 top-3" />
+              <Mail className="size-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="email"
                 required
                 placeholder="usuario@ejemplo.com"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-400 focus:outline-none transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-slate-800 placeholder:text-slate-400 focus:border-[#42C2C1] focus:outline-none transition-colors"
               />
             </div>
           </div>
 
+          {/* Contraseña */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-600 mb-1">
               Contraseña
             </label>
             <div className="relative">
-              <Lock className="size-4 text-slate-500 absolute left-3.5 top-3" />
+              <Lock className="size-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="password"
                 required
+                minLength={6}
                 placeholder="••••••••"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-400 focus:outline-none transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-slate-800 placeholder:text-slate-400 focus:border-[#42C2C1] focus:outline-none transition-colors"
               />
             </div>
           </div>
 
+          {/* Rol de Acceso */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-600 mb-1">
               Rol de Acceso
             </label>
             <div className="relative">
-              <ShieldCheck className="size-4 text-slate-500 absolute left-3.5 top-3" />
+              <ShieldCheck className="size-4 text-slate-400 absolute left-3.5 top-3" />
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 focus:border-amber-400 focus:outline-none transition-colors appearance-none"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-slate-800 focus:border-[#42C2C1] focus:outline-none transition-colors appearance-none"
               >
                 <option value="operator">Operador (Solo Lectura)</option>
                 <option value="admin">Administrador (Control Total)</option>
@@ -105,13 +154,24 @@ export default function Register() {
             </div>
           </div>
 
+          {/* Botón Submit */}
           <button
             type="submit"
-            className="w-full mt-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-[0.98] text-sm"
+            disabled={loading}
+            className="w-full mt-2 bg-[#42C2C1] hover:bg-[#38b1b0] text-white font-bold py-3 px-4 rounded-2xl shadow-md shadow-[#42C2C1]/20 transition-all active:scale-[0.98]"
           >
-            Registrar Usuario
+            {loading ? "Registrando..." : "Registrar Usuario"}
           </button>
         </form>
+
+        {/* Link a Inicio de Sesión */}
+        <div className="text-center text-slate-400 pt-2 border-t border-slate-100">
+          ¿Ya tenés cuenta?{" "}
+          <Link to="/auth" className="text-[#42C2C1] font-semibold hover:underline">
+            Iniciar Sesión
+          </Link>
+        </div>
+
       </div>
     </div>
   );

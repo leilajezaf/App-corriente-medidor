@@ -1,5 +1,13 @@
-import React from "react";
+// src/components/CostEstimateCard.tsx
+import React, { useEffect, useState } from "react";
 import { DollarSign, Info, ShieldAlert } from "lucide-react";
+import {
+  fetchTariffs,
+  calculateCostFromTariff,
+  formatARS,
+  TariffRow,
+  CostBreakdown,
+} from "../services/tariffCalculator";
 
 interface CostEstimateProps {
   /** Consumo total acumulado en kWh */
@@ -7,28 +15,49 @@ interface CostEstimateProps {
 }
 
 export const CostEstimateCard: React.FC<CostEstimateProps> = ({ totalKwh }) => {
-  // 1. Obtener tarifa base (ej: 69.76) y multiplicador de impuestos (ej: 1.28)
-  const savedTariff = Number(localStorage.getItem("user_tariff")) || 69.76;
-  const taxMultiplier = Number(localStorage.getItem("user_tax_multiplier")) || 1.28;
+  const [tariffs, setTariffs] = useState<TariffRow[]>([]);
+  const [selectedTariff, setSelectedTariff] = useState<TariffRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // 2. Cálculos: consumo puro, costo de impuestos estimados y total final
-  const pureCost = totalKwh * savedTariff;
-  const totalCostWithTaxes = pureCost * taxMultiplier;
-  const estimatedTaxesAmount = totalCostWithTaxes - pureCost;
+  useEffect(() => {
+    async function loadTariffData() {
+      setLoading(true);
+      const data = await fetchTariffs();
+      setTariffs(data);
 
-  // 3. Formateador ARS
-  const formatARS = (amount: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
+      if (data.length > 0) {
+        // Seleccionamos la primera tarifa de Supabase por defecto
+        setSelectedTariff(data[0]);
+      }
+      setLoading(false);
+    }
+
+    loadTariffData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg text-slate-400 text-sm flex items-center justify-center h-48">
+        Cargando tarifas de Supabase...
+      </div>
+    );
+  }
+
+  // Si no hay datos cargados en Supabase, mostramos un fallback
+  const fallbackTariff: TariffRow = {
+    id: "fallback",
+    provider: "Tarifa Estimada",
+    zone_name: "General",
+    price_per_kwh: 69.76,
+    tax_multiplier: 1.28,
   };
+
+  const currentTariff = selectedTariff || fallbackTariff;
+  const breakdown: CostBreakdown = calculateCostFromTariff(totalKwh, currentTariff);
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-      {/* Encabezado */}
+      {/* Encabezado con selector de distribuidora */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
@@ -36,25 +65,40 @@ export const CostEstimateCard: React.FC<CostEstimateProps> = ({ totalKwh }) => {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-slate-200">
-              Gasto Estimado de Consumo
+              Gasto Estimado ({breakdown.provider})
             </h3>
-            <p className="text-xs text-slate-400">Cálculo de consumo con impuestos orientativos</p>
+            <p className="text-xs text-slate-400">Cálculo en vivo vía Supabase</p>
           </div>
         </div>
 
-        <span className="px-2.5 py-1 text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full flex items-center gap-1">
-          <Info className="size-3" /> Valor Aprox.
-        </span>
+        {tariffs.length > 1 && (
+          <select
+            value={currentTariff.id}
+            onChange={(e) => {
+              const found = tariffs.find((t) => t.id === e.target.value);
+              if (found) setSelectedTariff(found);
+            }}
+            className="bg-slate-950 text-xs text-slate-200 border border-slate-800 rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500"
+          >
+            {tariffs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.provider} ({t.zone_name})
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Muestra Principal del Total Estimado */}
       <div className="mb-4">
         <div className="text-3xl font-extrabold text-slate-100 tracking-tight">
-          {formatARS(totalCostWithTaxes)}
+          {formatARS(breakdown.totalCostWithTaxes)}
         </div>
         <p className="text-xs text-slate-400 mt-1">
           Basado en <strong className="text-slate-200">{totalKwh.toFixed(2)} kWh</strong> a{" "}
-          <span className="text-emerald-400 font-semibold">{formatARS(savedTariff)}/kWh</span>
+          <span className="text-emerald-400 font-semibold">
+            {formatARS(breakdown.pricePerKwh)}/kWh
+          </span>
         </p>
       </div>
 
@@ -62,15 +106,17 @@ export const CostEstimateCard: React.FC<CostEstimateProps> = ({ totalKwh }) => {
       <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 mb-3 text-xs space-y-1.5">
         <div className="flex justify-between text-slate-300">
           <span>Consumo puro estimado:</span>
-          <span className="font-medium text-slate-100">{formatARS(pureCost)}</span>
+          <span className="font-medium text-slate-100">{formatARS(breakdown.pureCost)}</span>
         </div>
         <div className="flex justify-between text-slate-400">
-          <span>Impuestos estim. (~{Math.round((taxMultiplier - 1) * 100)}%):</span>
-          <span className="text-amber-400/90 font-medium">+{formatARS(estimatedTaxesAmount)}</span>
+          <span>Impuestos (~{breakdown.taxPercentage}%):</span>
+          <span className="text-amber-400/90 font-medium">
+            +{formatARS(breakdown.estimatedTaxesAmount)}
+          </span>
         </div>
         <div className="flex justify-between text-slate-200 pt-1 border-t border-slate-800/60 font-semibold">
           <span>Total Estimado:</span>
-          <span className="text-emerald-400">{formatARS(totalCostWithTaxes)}</span>
+          <span className="text-emerald-400">{formatARS(breakdown.totalCostWithTaxes)}</span>
         </div>
       </div>
 
@@ -78,7 +124,7 @@ export const CostEstimateCard: React.FC<CostEstimateProps> = ({ totalKwh }) => {
       <div className="flex items-start gap-2 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 leading-snug">
         <ShieldAlert className="size-4 text-slate-500 shrink-0 mt-0.5" />
         <p>
-          <strong className="text-slate-300">Aviso informativo:</strong> Los impuestos y cargos se calculan de manera estimada según la zona seleccionada. No reemplaza una liquidación oficial de la distribuidora.
+          <strong className="text-slate-300">Aviso informativo:</strong> Tarifas consultadas en la base de datos de Supabase.
         </p>
       </div>
     </div>

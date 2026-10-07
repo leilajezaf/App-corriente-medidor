@@ -1,267 +1,336 @@
-// src/routes/Settings.tsx
+import React, { useEffect, useState } from "react";
+import { supabase } from "../integrations/supabase/client";
+import { TariffRow, fetchTariffs, formatARS } from "../services/tariffCalculator";
+import {
+  Settings as SettingsIcon,
+  Plus,
+  Trash2,
+  Edit2,
+  Save,
+  X,
+  DollarSign,
+  Building2,
+  MapPin,
+  Percent,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
-import { useState, useEffect } from "react";
-import { fetchTariffs, TariffRow } from "../lib/tariffsService";
-import { Sliders, Bell, ShieldAlert, DollarSign, Cpu, Save } from "lucide-react";
-import { AccessibilitySettings } from "@/components/AccessibilitySettings";
+export const Settings: React.FC = () => {
+  const [tariffs, setTariffs] = useState<TariffRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-export default function Settings() {
-  const [dbZones, setDbZones] = useState<TariffRow[]>([]);
-  const [loadingZones, setLoadingZones] = useState<boolean>(true);
-
-  const [maxThermalAmps, setMaxThermalAmps] = useState<number>(() => {
-    return Number(localStorage.getItem("user_max_amps")) || 32;
+  // Estado del formulario (creación o edición)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    provider: "",
+    zone_name: "",
+    price_per_kwh: 69.76,
+    tax_multiplier: 1.28,
   });
 
-  const [tariff, setTariff] = useState<number>(() => {
-    return Number(localStorage.getItem("user_tariff")) || 110;
-  });
-
-  const [selectedZone, setSelectedZone] = useState<string>(() => {
-    return localStorage.getItem("user_zone") || "";
-  });
-
-  const [voltage, setVoltage] = useState<number>(220);
-
-  const [soundAlerts, setSoundAlerts] = useState<boolean>(true);
-  const [simulationMode, setSimulationMode] = useState<boolean>(false);
-  const [autoDisconnect, setAutoDisconnect] = useState<boolean>(false);
-
-  const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (message: string) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3500);
+  // Cargar lista de tarifas desde Supabase
+  const loadData = async () => {
+    setLoading(true);
+    const data = await fetchTariffs();
+    setTariffs(data);
+    setLoading(false);
   };
 
   useEffect(() => {
-    async function loadData() {
-      setLoadingZones(true);
-      const zones = await fetchTariffs();
-      setDbZones(zones);
-      setLoadingZones(false);
-
-      if (zones.length > 0 && !localStorage.getItem("user_zone")) {
-        setSelectedZone(zones[0].id);
-        setTariff(zones[0].price_per_kwh);
-        localStorage.setItem("user_tariff", zones[0].price_per_kwh.toString());
-        localStorage.setItem("user_tax_multiplier", (zones[0].tax_multiplier || 1.28).toString());
-      }
-    }
     loadData();
   }, []);
 
-  const handleZoneSelect = (zoneId: string) => {
-    setSelectedZone(zoneId);
-    const found = dbZones.find((z) => z.id === zoneId);
-    if (found) {
-      setTariff(found.price_per_kwh);
-      localStorage.setItem("user_tariff", found.price_per_kwh.toString());
-      localStorage.setItem("user_tax_multiplier", (found.tax_multiplier || 1.28).toString());
-      localStorage.setItem("user_zone", found.id);
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      provider: "",
+      zone_name: "",
+      price_per_kwh: 69.76,
+      tax_multiplier: 1.28,
+    });
+  };
 
-      const formattedPrice = new Intl.NumberFormat("es-AR", {
-        style: "currency",
-        currency: "ARS",
-      }).format(found.price_per_kwh);
+  // Cargar tarifa existente en el formulario para editar
+  const handleEditClick = (tariff: TariffRow) => {
+    setEditingId(tariff.id);
+    setFormData({
+      provider: tariff.provider,
+      zone_name: tariff.zone_name,
+      price_per_kwh: tariff.price_per_kwh,
+      tax_multiplier: tariff.tax_multiplier,
+    });
+  };
 
-      showToast(`Zona actualizada a ${formattedPrice}/kWh (${found.provider})`);
+  // Guardar (Insert o Update) en Supabase
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      if (editingId) {
+        // Actualizar registro existente
+        const { error } = await supabase
+          .from("tariffs")
+          .update({
+            provider: formData.provider,
+            zone_name: formData.zone_name,
+            price_per_kwh: formData.price_per_kwh,
+            tax_multiplier: formData.tax_multiplier,
+          })
+          .eq("id", editingId);
+
+        if (error) throw error;
+        setFeedback({ type: "success", msg: "Tarifa actualizada con éxito." });
+      } else {
+        // Insertar nuevo registro
+        const { error } = await supabase.from("tariffs").insert([
+          {
+            provider: formData.provider,
+            zone_name: formData.zone_name,
+            price_per_kwh: formData.price_per_kwh,
+            tax_multiplier: formData.tax_multiplier,
+          },
+        ]);
+
+        if (error) throw error;
+        setFeedback({ type: "success", msg: "Nueva tarifa guardada correctamente." });
+      }
+
+      resetForm();
+      await loadData();
+    } catch (err: any) {
+      console.error("Error al guardar en Supabase:", err);
+      setFeedback({ type: "error", msg: err.message || "Ocurrió un error al guardar la tarifa." });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleSave = () => {
-    localStorage.setItem("user_tariff", tariff.toString());
-    localStorage.setItem("user_zone", selectedZone);
-    localStorage.setItem("user_max_amps", maxThermalAmps.toString());
+  // Eliminar tarifa de Supabase
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Estás seguro de que querés eliminar esta tarifa?")) return;
 
-    setSavedSuccess(true);
-    showToast("✓ Configuración guardada correctamente");
-    setTimeout(() => setSavedSuccess(false), 3000);
+    try {
+      const { error } = await supabase.from("tariffs").delete().eq("id", id);
+      if (error) throw error;
+      setFeedback({ type: "success", msg: "Tarifa eliminada." });
+      await loadData();
+    } catch (err: any) {
+      setFeedback({ type: "error", msg: "Error al eliminar la tarifa." });
+    }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 relative pb-12">
+    <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-8 text-slate-100">
       {/* Encabezado */}
-      <div className="bg-slate-900/90 p-5 rounded-2xl border border-slate-800 flex items-center justify-between">
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+        <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
+          <SettingsIcon className="size-6" />
+        </div>
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Sliders className="size-5 text-amber-400" />
-            Ajustes del Sistema
-          </h1>
-          <p className="text-sm text-slate-300 mt-1">
-            Parámetros de la llave térmica, notificaciones, visualización y medición.
+          <h1 className="text-xl font-bold tracking-tight text-slate-100">Configuración de Tarifas</h1>
+          <p className="text-xs text-slate-400">
+            Administrá los cuadros tarifarios e impuestos guardados en Supabase
           </p>
         </div>
-        <button
-          onClick={handleSave}
-          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm px-4 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 cursor-pointer"
-        >
-          <Save className="size-4" />
-          Guardar
-        </button>
       </div>
 
-      {savedSuccess && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 rounded-2xl text-sm font-semibold animate-fade-in text-center">
-          ✓ Configuración guardada correctamente.
-        </div>
-      )}
-
-      {/* 1. Capacidad Térmica */}
-      <section className="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
+      {/* Alerta de Feedback */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${
+            feedback.type === "success"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+              : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <ShieldAlert className="size-5 text-red-400" />
-            <h2 className="text-base font-bold text-slate-100">Límite de Capacidad Térmica</h2>
-          </div>
-          <span className="text-2xl font-black text-amber-400 font-mono">{maxThermalAmps} A</span>
-        </div>
-        <p className="text-sm text-slate-300">
-          Ajustá el valor nominal de tu llave térmica principal. El medidor neón usará este umbral para alertar sobrecargas.
-        </p>
-        <input
-          type="range"
-          min="10"
-          max="63"
-          step="1"
-          value={maxThermalAmps}
-          onChange={(e) => setMaxThermalAmps(Number(e.target.value))}
-          className="w-full h-3 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-amber-400 border border-slate-800"
-        />
-        <div className="flex justify-between text-xs font-bold text-slate-400 px-1">
-          <span>10 A (Mín)</span>
-          <span>25 A</span>
-          <span>32 A (Hogar estándar)</span>
-          <span>50 A</span>
-          <span>63 A (Industrial)</span>
-        </div>
-      </section>
-
-      {/* 2. COMPONENTE MODULARIZADO DE ACCESIBILIDAD */}
-      <AccessibilitySettings />
-
-      {/* 3. Alertas y Automatización */}
-      <section className="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 space-y-6">
-        <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-          <Bell className="size-5 text-amber-400" />
-          Alertas y Automatización
-        </h2>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-200">Alarma Sonora de Sobrecarga</p>
-            <p className="text-xs text-slate-400">Emite un aviso cuando la corriente supere el 85% de la térmica.</p>
-          </div>
-          <button
-            onClick={() => setSoundAlerts(!soundAlerts)}
-            className={`w-14 h-8 flex items-center rounded-full p-1 transition-all duration-300 cursor-pointer ${
-              soundAlerts ? "bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "bg-slate-800"
-            }`}
-          >
-            <div className={`bg-slate-950 w-6 h-6 rounded-full transition-transform duration-300 ${soundAlerts ? "translate-x-6" : "translate-x-0"}`} />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-slate-800/80 pt-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-200">Modo Simulación de Datos</p>
-            <p className="text-xs text-slate-400">Genera variaciones aleatorias para pruebas visuales en vivo.</p>
-          </div>
-          <button
-            onClick={() => setSimulationMode(!simulationMode)}
-            className={`w-14 h-8 flex items-center rounded-full p-1 transition-all duration-300 cursor-pointer ${
-              simulationMode ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]" : "bg-slate-800"
-            }`}
-          >
-            <div className={`bg-slate-950 w-6 h-6 rounded-full transition-transform duration-300 ${simulationMode ? "translate-x-6" : "translate-x-0"}`} />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-slate-800/80 pt-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-200">Corte Virtual Preventivo</p>
-            <p className="text-xs text-slate-400">Simula el disparo del disyuntor al alcanzar el 100% del límite.</p>
-          </div>
-          <button
-            onClick={() => setAutoDisconnect(!autoDisconnect)}
-            className={`w-14 h-8 flex items-center rounded-full p-1 transition-all duration-300 cursor-pointer ${
-              autoDisconnect ? "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]" : "bg-slate-800"
-            }`}
-          >
-            <div className={`bg-slate-950 w-6 h-6 rounded-full transition-transform duration-300 ${autoDisconnect ? "translate-x-6" : "translate-x-0"}`} />
-          </button>
-        </div>
-      </section>
-
-      {/* 4. Parámetros Financieros y Técnicos */}
-      <section className="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="md:col-span-2">
-          <label className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-2">
-            <DollarSign className="size-4 text-emerald-400" />
-            Distribuidora y Zona Tarifaria (Desde Supabase)
-          </label>
-          <select
-            value={selectedZone}
-            onChange={(e) => handleZoneSelect(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-sm focus:border-amber-400 focus:outline-none cursor-pointer"
-          >
-            {loadingZones ? (
-              <option value="">Cargando tarifas desde la base de datos...</option>
+            {feedback.type === "success" ? (
+              <CheckCircle2 className="size-4 shrink-0" />
             ) : (
-              dbZones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.provider} - {zone.zone_name} (${zone.price_per_kwh}/kWh)
-                </option>
-              ))
+              <AlertCircle className="size-4 shrink-0" />
             )}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-2">
-            <DollarSign className="size-4 text-emerald-400" />
-            Tarifa Base por kWh ($ ARS)
-          </label>
-          <input
-            type="number"
-            step="1"
-            value={tariff}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              setTariff(val);
-              localStorage.setItem("user_tariff", val.toString());
-            }}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-sm focus:border-amber-400 focus:outline-none"
-          />
-          <p className="text-xs text-slate-400 mt-1">Costo unitario sin impuestos aplicados.</p>
-        </div>
-
-        <div>
-          <label className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-2">
-            <Cpu className="size-4 text-sky-400" />
-            Tensión de Red (Voltios)
-          </label>
-          <input
-            type="number"
-            value={voltage}
-            onChange={(e) => setVoltage(Number(e.target.value))}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-sm focus:border-amber-400 focus:outline-none"
-          />
-          <p className="text-xs text-slate-400 mt-1">Usado para la conversión exacta P = V × I.</p>
-        </div>
-      </section>
-
-      {/* Toast Flotante */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-emerald-950 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl shadow-emerald-950/80 animate-bounce">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-          </span>
-          <p className="text-sm font-semibold tracking-wide">{toastMessage}</p>
+            <span>{feedback.msg}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100">
+            <X className="size-4" />
+          </button>
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Formulario (Columna Izquierda) */}
+        <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              {editingId ? <Edit2 className="size-4 text-amber-400" /> : <Plus className="size-4 text-emerald-400" />}
+              {editingId ? "Editar Tarifa" : "Agregar Nueva Tarifa"}
+            </h2>
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+              >
+                <X className="size-3" /> Cancelar
+              </button>
+            )}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            {/* Distribuidora / Proveedor */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">Distribuidora / Proveedor</label>
+              <div className="relative">
+                <Building2 className="size-4 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Edenor, Edesur, Edelap"
+                  value={formData.provider}
+                  onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Zona o Categoría */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">Zona / Categoría Tarifaria</label>
+              <div className="relative">
+                <MapPin className="size-4 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Quilmes R1, CABA T1-R"
+                  value={formData.zone_name}
+                  onChange={(e) => setFormData({ ...formData, zone_name: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Precio del kWh */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">Precio del kWh ($ ARS)</label>
+              <div className="relative">
+                <DollarSign className="size-4 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  min="0"
+                  placeholder="69.76"
+                  value={formData.price_per_kwh}
+                  onChange={(e) =>
+                    setFormData({ ...formData, price_per_kwh: parseFloat(e.target.value) || 0 })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Multiplicador de Impuestos */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">
+                Multiplicador de Impuestos (ej: 1.28 = +28%)
+              </label>
+              <div className="relative">
+                <Percent className="size-4 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  min="1"
+                  placeholder="1.28"
+                  value={formData.tax_multiplier}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tax_multiplier: parseFloat(e.target.value) || 1 })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Botón Guardar */}
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2 text-xs"
+            >
+              <Save className="size-4" />
+              {saving ? "Guardando..." : editingId ? "Actualizar Tarifa" : "Guardar Tarifa"}
+            </button>
+          </form>
+        </div>
+
+        {/* Listado de Tarifas Registradas (Columna Derecha) */}
+        <div className="lg:col-span-7 space-y-4">
+          <h2 className="text-sm font-semibold text-slate-200">Tarifas Registradas en Supabase</h2>
+
+          {loading ? (
+            <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/50 rounded-2xl border border-slate-800">
+              Cargando tarifas...
+            </div>
+          ) : tariffs.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400 bg-slate-900/50 rounded-2xl border border-slate-800">
+              No hay tarifas registradas en la tabla <code className="text-emerald-400">tariffs</code>.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {tariffs.map((t) => {
+                const taxPct = Math.round((t.tax_multiplier - 1) * 100);
+                return (
+                  <div
+                    key={t.id}
+                    className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between hover:border-slate-700 transition"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-100 text-sm">{t.provider}</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                          {t.zone_name}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-400 flex items-center gap-3">
+                        <span>
+                          Valor kWh: <strong className="text-emerald-400">{formatARS(t.price_per_kwh)}</strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Impuestos: <strong className="text-amber-400">+{taxPct}%</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEditClick(t)}
+                        className="p-2 text-slate-400 hover:text-amber-400 hover:bg-amber-400/10 rounded-xl transition"
+                        title="Editar tarifa"
+                      >
+                        <Edit2 className="size-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(t.id)}
+                        className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-xl transition"
+                        title="Eliminar tarifa"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
-}
+};
