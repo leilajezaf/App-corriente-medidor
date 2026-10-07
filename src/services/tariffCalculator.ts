@@ -1,3 +1,4 @@
+//Mueve o adapta aquí la lógica que calcula pesos ($) a partir de los kWh consumidos por franja horaria.
 import { supabase } from "../integrations/supabase/client";
 
 export type TariffRow = {

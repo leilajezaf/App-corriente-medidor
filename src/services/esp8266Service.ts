@@ -1,0 +1,1 @@
+//el servicio que se comunica por HTTP o WebSockets con tu ESP8266 para traer los Watts y Amperes en tiempo real.
